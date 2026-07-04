@@ -25,7 +25,11 @@ pip install -r requirements.txt
 
 Script ကို စတင်ရန်-
 ```bash
-python termux_code_chee_fixed.py
+# ပထမဆုံးအကြိမ်တွင်သာ run ရန် (Compile လုပ်ခြင်း)
+python setup.py build_ext --inplace
+
+# Script ကို စတင်ရန်
+python main.py
 ```
 
 ### Commands များ:

@@ -1,3 +1,5 @@
 aiohttp
 requests
 Pillow
+Cython
+setuptools
