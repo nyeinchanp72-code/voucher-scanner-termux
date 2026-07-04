@@ -25,10 +25,7 @@ pip install -r requirements.txt
 
 Script ကို စတင်ရန်-
 ```bash
-# ပထမဆုံးအကြိမ်တွင်သာ run ရန် (Compile လုပ်ခြင်း)
-python setup.py build_ext --inplace
-
-# Script ကို စတင်ရန်
+# Script ကို စတင်ရန် (ပထမဆုံးအကြိမ်တွင် အလိုအလျောက် code ကို ဝှက်ပေးပါလိမ့်မည်)
 python main.py
 ```
 
