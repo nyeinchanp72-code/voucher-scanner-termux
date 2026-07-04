@@ -4,6 +4,11 @@ import sys
 
 def setup_so():
     if not os.path.exists("termux_code_chee_fixed.so"):
+        # Check if the .so exists with architecture suffix
+        so_files = [f for f in os.listdir('.') if f.startswith('termux_code_chee_fixed') and f.endswith('.so')]
+        if so_files:
+            return
+
         print("First time setup: Compiling and securing code...")
         try:
             # Compile using setup.py
